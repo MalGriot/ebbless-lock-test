@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lock Test">
+<meta name="theme-color" content="#121212">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Lock Test</title>
+<style>
+:root{--bg:#121212;--fg:#f2f2f2;--mut:#9a9a9a;--card:#1d1d1d;--acc:#7be0a4}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;padding-top:max(16px,env(safe-area-inset-top));background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,system-ui,sans-serif}
+h1{font-size:20px;margin:0 0 4px}
+p,li{color:var(--mut);margin:6px 0}
+.card{background:var(--card);border-radius:14px;padding:14px;margin:12px 0}
+button{font:inherit;color:var(--fg);background:#2a2a2a;border:0;border-radius:10px;padding:12px 14px;margin:4px 4px 4px 0}
+button.go{background:var(--acc);color:#0b0b0b;font-weight:600}
+label{display:block;margin:6px 0;color:var(--fg)}
+#mode{font-weight:600;color:var(--acc)}
+#log{font:12px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:42vh;overflow:auto;color:#cfcfcf}
+#yt{width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#000}
+#yt iframe{width:100%;height:100%}
+</style>
+</head>
+<body>
+<h1>Lock Test</h1>
+<p>Checks whether music keeps playing when the iPhone screen locks. Running as: <span id="mode">...</span></p>
+
+<div class="card">
+<b>How to test</b>
+<ol>
+<li>Tap <b>Start YouTube test</b>. Make sure you hear sound.</li>
+<li>Press the side button to lock the phone. Wait 30 seconds. Listen: does it keep playing?</li>
+<li>Wake the phone. If a Now Playing card shows, try its play button.</li>
+<li>Unlock, come back here, tap <b>Share log</b> and send it to Mal.</li>
+<li>Repeat in the other mode: this page in Safari, then added to the Home Screen (Share, Add to Home Screen) and opened from there.</li>
+</ol>
+</div>
+
+<div class="card">
+<b>Options for this run</b>
+<label><input type="checkbox" id="oKeep" checked> silent keepalive audio</label>
+<label><input type="checkbox" id="oSess" checked> audioSession = playback</label>
+<label><input type="checkbox" id="oMs" checked> Media Session (lock screen card)</label>
+<p>Change these before you tap Start.</p>
+</div>
+
+<div class="card">
+<div id="yt"><div id="ytp"></div></div>
+<button class="go" id="bYt">Start YouTube test</button>
+<button id="bYtStop">Stop</button>
+</div>
+
+<div class="card">
+<b>Control</b>
+<p>A plain audio tone from this page (no YouTube). This should keep playing on lock. If it doesn't, the phone settings are the cause, not YouTube.</p>
+<button class="go" id="bTone">Start tone</button>
+<button id="bToneStop">Stop</button>
+</div>
+
+<div class="card">
+<b>Log</b><br>
+<button id="bShare">Share log</button><button id="bCopy">Copy log</button><button id="bClear">Clear</button>
+<div id="log"></div>
+</div>
+
+<audio id="keep" loop playsinline></audio>
+<audio id="tone" loop playsinline></audio>
+
+<script>
+(function(){
+'use strict';
+var $ = function(id){ return document.getElementById(id); };
+var logEl = $('log'), lines = [], t0 = Date.now();
+var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+$('mode').textContent = standalone ? 'Home Screen app' : 'Safari tab';
+
+function fmt(ms){ var s = Math.floor(ms / 1000); return (s < 600 ? '0' : '') + Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }
+function log(msg){
+  var l = fmt(Date.now() - t0) + ' ' + msg;
+  lines.push(l);
+  if (lines.length > 400) lines.shift();
+  logEl.textContent = lines.join('\n');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function snap(){
+  var as = '';
+  try { as = navigator.audioSession ? navigator.audioSession.state + '/' + navigator.audioSession.type : 'n/a'; } catch(e){ as = 'err'; }
+  var ps = '?', ct = '?';
+  try { if (player && player.getPlayerState){ ps = player.getPlayerState(); ct = Math.round(player.getCurrentTime()); } } catch(e){}
+  return 'vis=' + document.visibilityState + ' yt=' + ps + '@' + ct + 's keep=' + ($('keep').paused ? 'paused' : 'playing') + ' tone=' + ($('tone').paused ? 'paused' : 'playing') + ' session=' + as;
+}
+log('page loaded. ' + (standalone ? 'Home Screen app' : 'Safari tab') + '. ' + navigator.userAgent.replace(/^Mozilla\/5.0 /, ''));
+log('audioSession API: ' + ('audioSession' in navigator) + ', mediaSession API: ' + ('mediaSession' in navigator));
+
+/* near-silent noise loop, same idea as the real app's keepalive */
+(function(){
+  var n = 8000, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  function str(o, s){ for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 2, true);
+  for (var i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round((Math.random() * 2 - 1) * 2), true);
+  $('keep').src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  /* quiet 220 Hz tone, 2 s loop */
+  var m = 16000 * 2, b2 = new ArrayBuffer(44 + m * 2), w = new DataView(b2);
+  function s2(o, s){ for (var i = 0; i < s.length; i++) w.setUint8(o + i, s.charCodeAt(i)); }
+  s2(0, 'RIFF'); w.setUint32(4, 36 + m * 2, true); s2(8, 'WAVEfmt ');
+  w.setUint32(16, 16, true); w.setUint16(20, 1, true); w.setUint16(22, 1, true);
+  w.setUint32(24, 16000, true); w.setUint32(28, 32000, true); w.setUint16(32, 2, true); w.setUint16(34, 16, true);
+  s2(36, 'data'); w.setUint32(40, m * 2, true);
+  for (var j = 0; j < m; j++) w.setInt16(44 + j * 2, Math.round(Math.sin(2 * Math.PI * 220 * j / 16000) * 3000), true);
+  $('tone').src = URL.createObjectURL(new Blob([b2], { type: 'audio/wav' }));
+})();
+
+['play', 'pause', 'ended', 'stalled'].forEach(function(ev){
+  $('keep').addEventListener(ev, function(){ log('keepalive ' + ev); });
+  $('tone').addEventListener(ev, function(){ log('tone ' + ev); });
+});
+try { if (navigator.audioSession) navigator.audioSession.addEventListener('statechange', function(){ log('audioSession statechange -> ' + navigator.audioSession.state); }); } catch(e){}
+
+document.addEventListener('visibilitychange', function(){
+  log('visibility -> ' + document.visibilityState + ' | ' + snap());
+  if (document.visibilityState === 'visible') setTimeout(function(){ log('visible+3s | ' + snap()); }, 3000);
+});
+window.addEventListener('pagehide', function(){ log('pagehide'); });
+window.addEventListener('pageshow', function(e){ log('pageshow persisted=' + e.persisted); });
+
+/* heartbeat: gaps in these lines show when iOS froze the page */
+var lastBeat = Date.now();
+setInterval(function(){
+  var now = Date.now(), gap = now - lastBeat;
+  lastBeat = now;
+  if (gap > 3500) log('page was frozen for about ' + Math.round(gap / 1000) + 's');
+}, 1000);
+setInterval(function(){ if (player || !$('tone').paused) log('beat | ' + snap()); }, 10000);
+
+/* options */
+function opt(id){ return $(id).checked; }
+function applySession(){
+  try { if (navigator.audioSession) navigator.audioSession.type = opt('oSess') ? 'playback' : 'auto'; } catch(e){}
+  log('audioSession.type set to ' + (navigator.audioSession ? navigator.audioSession.type : 'n/a'));
+}
+function setMeta(title){
+  if (!('mediaSession' in navigator) || !opt('oMs')) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: 'Lock Test', album: 'EBBLESS', artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }] });
+    ['play', 'pause', 'previoustrack', 'nexttrack', 'stop'].forEach(function(a){
+      navigator.mediaSession.setActionHandler(a, function(){
+        log('LOCK SCREEN ACTION: ' + a + ' | ' + snap());
+        if (a === 'play'){ if (activeKind === 'yt' && player) player.playVideo(); else $('tone').play(); }
+        if (a === 'pause' || a === 'stop'){ if (activeKind === 'yt' && player) player.pauseVideo(); else $('tone').pause(); }
+      });
+    });
+  } catch(e){ log('mediaSession error ' + e.name); }
+}
+function keepOn(){
+  if (!opt('oKeep')) return;
+  $('keep').volume = 0.01;
+  $('keep').play().then(function(){ log('keepalive started'); }, function(e){ log('keepalive REFUSED ' + e.name); });
+}
+function keepOff(){ $('keep').pause(); }
+
+/* control tone */
+var activeKind = '';
+$('bTone').addEventListener('click', function(){
+  applySession(); setMeta('Control tone'); activeKind = 'tone';
+  $('tone').play().then(function(){ log('tone started'); }, function(e){ log('tone REFUSED ' + e.name); });
+  if ('mediaSession' in navigator && opt('oMs')) navigator.mediaSession.playbackState = 'playing';
+});
+$('bToneStop').addEventListener('click', function(){ $('tone').pause(); keepOff(); });
+
+/* YouTube */
+var player = null, ytReady = false, apiLoaded = false;
+var VIDEO = (new URLSearchParams(location.search)).get('v') || 'jfKfPfyJRdk';
+function loadApi(cb){
+  if (window.YT && YT.Player){ cb(); return; }
+  window.onYouTubeIframeAPIReady = cb;
+  if (apiLoaded) return;
+  apiLoaded = true;
+  var s = document.createElement('script');
+  s.src = 'https://www.youtube.com/iframe_api';
+  s.onerror = function(){ log('could not load the YouTube API'); };
+  document.head.appendChild(s);
+}
+$('bYt').addEventListener('click', function(){
+  applySession(); setMeta('YouTube test'); activeKind = 'yt';
+  keepOn();
+  if (player){ player.playVideo(); return; }
+  log('loading YouTube video ' + VIDEO);
+  loadApi(function(){
+    player = new YT.Player('ytp', {
+      videoId: VIDEO,
+      playerVars: { autoplay: 1, playsinline: 1 },
+      events: {
+        onReady: function(){ ytReady = true; log('yt ready'); try { player.playVideo(); } catch(e){} },
+        onStateChange: function(e){
+          var names = { '-1': 'unstarted', 0: 'ended', 1: 'PLAYING', 2: 'PAUSED', 3: 'buffering', 5: 'cued' };
+          log('yt state ' + (names[e.data] || e.data) + ' | ' + snap());
+          if ('mediaSession' in navigator && opt('oMs')) navigator.mediaSession.playbackState = e.data === 1 ? 'playing' : 'paused';
+        },
+        onError: function(e){ log('yt ERROR code ' + e.data); }
+      }
+    });
+  });
+});
+$('bYtStop').addEventListener('click', function(){ if (player && player.pauseVideo) player.pauseVideo(); keepOff(); });
+
+/* log tools */
+function text(){ return 'Lock Test log\n' + lines.join('\n'); }
+$('bClear').addEventListener('click', function(){ lines = []; logEl.textContent = ''; });
+$('bCopy').addEventListener('click', function(){
+  if (navigator.clipboard) navigator.clipboard.writeText(text()).then(function(){ log('log copied'); }, function(){ log('copy failed'); });
+});
+$('bShare').addEventListener('click', function(){
+  if (navigator.share) navigator.share({ text: text() }).catch(function(){});
+  else if (navigator.clipboard) navigator.clipboard.writeText(text()).then(function(){ log('log copied'); });
+});
+})();
+</script>
+</body>
+</html>
