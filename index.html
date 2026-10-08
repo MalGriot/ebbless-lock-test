@@ -51,6 +51,8 @@ label{display:block;margin:6px 0;color:var(--fg)}
 
 <div class="card">
 <div id="yt"><div id="ytp"></div></div>
+<label>Video (paste a YouTube link or ID)<br><input id="vid" style="width:100%;font:inherit;padding:10px;border-radius:8px;border:0;background:#2a2a2a;color:#f2f2f2" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+<div id="picks"></div>
 <button class="go" id="bYt">Start YouTube test</button>
 <button id="bYtStop">Stop</button>
 </div>
@@ -177,7 +179,14 @@ $('bToneStop').addEventListener('click', function(){ $('tone').pause(); keepOff(
 
 /* YouTube */
 var player = null, ytReady = false, apiLoaded = false;
-var VIDEO = (new URLSearchParams(location.search)).get('v') || 'jfKfPfyJRdk';
+var PICKS = [['Rick Astley', 'dQw4w9WgXcQ'], ['Lofi live', 'jfKfPfyJRdk'], ['Gangnam', '9bZkp7q19f0'], ['Despacito', 'kJQP7kiw5Fk'], ['Lofi 2', '4xDzrJKXOOY']];
+function parseId(t){ t = (t || '').trim(); var m = t.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/); return m ? m[1] : (/^[\w-]{11}$/.test(t) ? t : ''); }
+$('vid').value = parseId((new URLSearchParams(location.search)).get('v')) || PICKS[0][1];
+PICKS.forEach(function(p){
+  var b = document.createElement('button'); b.textContent = p[0];
+  b.addEventListener('click', function(){ $('vid').value = p[1]; if (player && player.loadVideoById){ log('switching to ' + p[1]); player.loadVideoById(p[1]); } });
+  $('picks').appendChild(b);
+});
 function loadApi(cb){
   if (window.YT && YT.Player){ cb(); return; }
   window.onYouTubeIframeAPIReady = cb;
@@ -192,11 +201,12 @@ $('bYt').addEventListener('click', function(){
   applySession(); setMeta('YouTube test'); activeKind = 'yt';
   keepOn();
   if (player){ player.playVideo(); return; }
+  var VIDEO = parseId($('vid').value); if (!VIDEO){ log('that is not a YouTube link or ID'); return; }
   log('loading YouTube video ' + VIDEO);
   loadApi(function(){
     player = new YT.Player('ytp', {
       videoId: VIDEO,
-      playerVars: { autoplay: 1, playsinline: 1 },
+      playerVars: { autoplay: 1, playsinline: 1, loop: 1, playlist: VIDEO },
       events: {
         onReady: function(){ ytReady = true; log('yt ready'); try { player.playVideo(); } catch(e){} },
         onStateChange: function(e){
@@ -204,7 +214,7 @@ $('bYt').addEventListener('click', function(){
           log('yt state ' + (names[e.data] || e.data) + ' | ' + snap());
           if ('mediaSession' in navigator && opt('oMs')) navigator.mediaSession.playbackState = e.data === 1 ? 'playing' : 'paused';
         },
-        onError: function(e){ log('yt ERROR code ' + e.data); }
+        onError: function(e){ log('yt ERROR code ' + e.data + (e.data == 100 ? ' (video removed or private)' : e.data == 101 || e.data == 150 ? ' (owner blocks embedding, or blocked in this country)' : '') + '. Try another video below.'); }
       }
     });
   });
